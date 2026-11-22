@@ -184,21 +184,34 @@ object DocumentParsers {
         // Register all images in the archive
         entries.forEach { (path, bytes) ->
             val lower = path.lowercase()
-            if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") || lower.endsWith(".webp")) {
+            if (lower.endsWith(".png") || lower.endsWith(".jpg") || lower.endsWith(".jpeg") ||
+                lower.endsWith(".webp") || lower.endsWith(".gif") || lower.endsWith(".svg")
+            ) {
                 images[path] = bytes
                 images[path.substringAfterLast('/')] = bytes
+                val decoded = runCatching { java.net.URLDecoder.decode(path, "UTF-8") }.getOrNull()
+                if (decoded != null && decoded != path) {
+                    images[decoded] = bytes
+                    images[decoded.substringAfterLast('/')] = bytes
+                }
             }
         }
 
         spinePaths.forEachIndexed { idx, chapterPath ->
+            val decodedPath = runCatching { java.net.URLDecoder.decode(chapterPath, "UTF-8") }.getOrDefault(chapterPath)
             val rawBytes = entries[chapterPath]
+                ?: entries[decodedPath]
                 ?: entries.entries.firstOrNull { it.key.equals(chapterPath, ignoreCase = true) }?.value
+                ?: entries.entries.firstOrNull { it.key.equals(decodedPath, ignoreCase = true) }?.value
                 ?: return@forEachIndexed
             val html = rawBytes.toString(Charsets.UTF_8)
             val parsed = parseXhtmlChapter(
                 html = html,
                 chapterDir = chapterPath.substringBeforeLast('/', ""),
-                tocTitle = tocTitles[chapterPath.substringAfterLast('/')] ?: tocTitles[chapterPath],
+                tocTitle = tocTitles[chapterPath.substringAfterLast('/')]
+                    ?: tocTitles[chapterPath]
+                    ?: tocTitles[decodedPath.substringAfterLast('/')]
+                    ?: tocTitles[decodedPath],
                 fallbackTitle = "Chapter ${idx + 1}",
                 footnotes = footnotes
             )
@@ -232,8 +245,11 @@ object DocumentParsers {
 
     private fun resolvePath(baseDir: String, href: String): String {
         val cleanHref = href.substringBefore('#').removePrefix("./")
-        if (baseDir.isEmpty()) return cleanHref
-        val parts = (baseDir.split("/") + cleanHref.split("/")).toMutableList()
+        val decodedHref = runCatching {
+            java.net.URLDecoder.decode(cleanHref, "UTF-8")
+        }.getOrDefault(cleanHref)
+        if (baseDir.isEmpty()) return decodedHref
+        val parts = (baseDir.split("/") + decodedHref.split("/")).toMutableList()
         val stack = mutableListOf<String>()
         for (p in parts) {
             when (p) {
@@ -323,7 +339,7 @@ object DocumentParsers {
         }
 
         val blockRegex = Regex(
-            "<(h[1-6]|p|blockquote|pre|li|hr|img)([^>]*)>(.*?)</\\1>|<img([^>]*)/?>|<hr[^>]*/?>",
+            "<(h[1-6]|p|blockquote|pre|li|hr|img|div)([^>]*)>(.*?)</\\1>|<img([^>]*)/?>|<hr[^>]*/?>",
             setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL)
         )
 
@@ -372,7 +388,11 @@ object DocumentParsers {
                         afterHeading = true
                     }
                 }
-                tag == "p" -> {
+                tag == "p" || tag == "div" -> {
+                    if (tag == "div") {
+                        val hasNestedBlock = Regex("<(p|h[1-6]|div|blockquote|pre|ul|ol|table)", RegexOption.IGNORE_CASE).containsMatchIn(inner)
+                        if (hasNestedBlock) continue
+                    }
                     // Check if paragraph contains an inline img
                     val imgMatch = Regex("<img([^>]*)/?>", RegexOption.IGNORE_CASE).find(inner)
                     if (imgMatch != null) {
@@ -427,6 +447,7 @@ object DocumentParsers {
         val tokenRegex = Regex("(<[^>]+>)|([^<]+)")
         var boldStart = -1
         var italicStart = -1
+        var strikethroughStart = -1
         var codeStart = -1
         var linkStart = -1
         var linkTarget: String? = null
@@ -449,6 +470,11 @@ object DocumentParsers {
                     lower.startsWith("</i") || lower.startsWith("</em") -> {
                         if (italicStart in 0 until out.length) spans.add(InlineSpan(italicStart, out.length, InlineSpanType.ITALIC))
                         italicStart = -1
+                    }
+                    lower.startsWith("<del") || lower.startsWith("<s") || lower.startsWith("<strike") -> strikethroughStart = out.length
+                    lower.startsWith("</del") || lower.startsWith("</s") || lower.startsWith("</strike") -> {
+                        if (strikethroughStart in 0 until out.length) spans.add(InlineSpan(strikethroughStart, out.length, InlineSpanType.STRIKETHROUGH))
+                        strikethroughStart = -1
                     }
                     lower.startsWith("<code") -> codeStart = out.length
                     lower.startsWith("</code") -> {
@@ -808,7 +834,7 @@ object DocumentParsers {
         val chapters = mutableListOf<ReaderChapter>()
         var currentTitle = book.title
         var currentBlocks = mutableListOf<ContentBlock>()
-        val chapterHeading = Regex("^(Chapter|CHAPTER|Part|PART)\\s+[\\w\\d.:-]+.*$")
+        val chapterHeading = Regex("^(Chapter|CHAPTER|Part|PART|Book|BOOK|Section|SECTION|Act|ACT|Scene|SCENE|Prologue|PROLOGUE|Epilogue|EPILOGUE|[IVXLCDM]+\\.)\\s*.*$")
 
         for (para in blocks) {
             if (chapterHeading.matches(para) && para.length < 80) {
@@ -898,17 +924,66 @@ object DocumentParsers {
         return r.find(tagOrAttrs)?.groupValues?.get(1)
     }
 
-    private fun decodeHtmlEntities(input: String): String = input
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'")
-        .replace("&apos;", "'")
-        .replace("&nbsp;", " ")
-        .replace("&mdash;", "—")
-        .replace("&ndash;", "–")
-        .replace("&hellip;", "…")
+    private val numericEntityRegex = Regex("&#(\\d+);|&#x([0-9a-fA-F]+);")
+
+    fun decodeHtmlEntities(input: String): String {
+        if (!input.contains('&')) return input
+
+        var text = input
+            .replace("&amp;", "&")
+            .replace("&lt;", "<")
+            .replace("&gt;", ">")
+            .replace("&quot;", "\"")
+            .replace("&#39;", "'")
+            .replace("&apos;", "'")
+            .replace("&nbsp;", " ")
+            .replace("&mdash;", "—")
+            .replace("&ndash;", "–")
+            .replace("&hellip;", "…")
+            .replace("&ldquo;", "“")
+            .replace("&rdquo;", "”")
+            .replace("&lsquo;", "‘")
+            .replace("&rsquo;", "’")
+            .replace("&sbquo;", "‚")
+            .replace("&bdquo;", "„")
+            .replace("&laquo;", "«")
+            .replace("&raquo;", "»")
+            .replace("&copy;", "©")
+            .replace("&reg;", "®")
+            .replace("&trade;", "™")
+            .replace("&bull;", "•")
+            .replace("&para;", "¶")
+            .replace("&sect;", "§")
+            .replace("&dagger;", "†")
+            .replace("&Dagger;", "‡")
+            .replace("&permil;", "‰")
+            .replace("&deg;", "°")
+            .replace("&plusmn;", "±")
+            .replace("&times;", "×")
+            .replace("&divide;", "÷")
+            .replace("&cent;", "¢")
+            .replace("&pound;", "£")
+            .replace("&yen;", "¥")
+            .replace("&euro;", "€")
+
+        if (text.contains("&#")) {
+            text = numericEntityRegex.replace(text) { matchResult ->
+                val dec = matchResult.groupValues[1]
+                val hex = matchResult.groupValues[2]
+                val codePoint = when {
+                    dec.isNotEmpty() -> dec.toIntOrNull()
+                    hex.isNotEmpty() -> hex.toIntOrNull(16)
+                    else -> null
+                }
+                if (codePoint != null && Character.isValidCodePoint(codePoint)) {
+                    String(Character.toChars(codePoint))
+                } else {
+                    matchResult.value
+                }
+            }
+        }
+        return text
+    }
 
     private fun buildPlainText(blocks: List<ContentBlock>): String = buildString {
         blocks.forEach { b ->

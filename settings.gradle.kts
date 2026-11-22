@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "Mochi Reader"
+rootProject.name = "Kismis eBook Reader"
 
 include(":app")

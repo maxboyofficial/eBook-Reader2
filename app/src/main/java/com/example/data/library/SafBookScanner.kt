@@ -350,6 +350,29 @@ object SafBookScanner {
             }
         }
 
+        // Fallback Pass: if no cover found in OPF metadata, search for entry named cover.*
+        if (!coverFile.exists() && coverHref == null) {
+            streamProvider()?.use { raw ->
+                ZipInputStream(BufferedInputStream(raw)).use { zip ->
+                    var entry: ZipEntry? = zip.nextEntry
+                    while (entry != null) {
+                        val lower = entry.name.lowercase()
+                        if (!entry.isDirectory && (
+                                lower.endsWith("/cover.jpg") || lower.endsWith("/cover.jpeg") ||
+                                lower.endsWith("/cover.png") || lower.endsWith("/cover.webp") ||
+                                lower == "cover.jpg" || lower == "cover.jpeg" || lower == "cover.png" || lower == "cover.webp"
+                            )
+                        ) {
+                            saveDownsampledBitmap(zip, coverFile)
+                            break
+                        }
+                        zip.closeEntry()
+                        entry = zip.nextEntry
+                    }
+                }
+            }
+        }
+
         return ScannedBookMetadata(
             title = title,
             authors = author,

@@ -113,7 +113,9 @@ object PdfPageEngine {
                         page.render(rawBmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
 
                         val finalBmp = if (smartDarkInvert) {
-                            applySmartDarkInvert(rawBmp)
+                            val inverted = applySmartDarkInvert(rawBmp)
+                            rawBmp.recycle()
+                            inverted
                         } else {
                             rawBmp
                         }

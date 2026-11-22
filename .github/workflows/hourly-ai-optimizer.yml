@@ -122,14 +122,14 @@ jobs:
               f.write(result.get("summary", "perf: AI code optimization"))
           EOF
 
-      - name: Verify Compilation Before Pushing
+      - name: Verify Compilation & Tests Before Pushing
         id: verify
         run: |
           if [ -n "$(git status --porcelain)" ]; then
-            if gradle compileDebugKotlin; then
+            if gradle compileDebugKotlin testDebugUnitTest; then
               echo "valid=true" >> $GITHUB_OUTPUT
             else
-              echo "Compilation failed! Reverting AI edits."
+              echo "Compilation or tests failed! Reverting AI edits."
               git checkout -- .
               echo "valid=false" >> $GITHUB_OUTPUT
             fi

@@ -323,4 +323,110 @@ class ReaderParserAndPaginatorTest {
         val bookSettings = db.bookSettingsDao().getBookSettings(insertedId)
         assertEquals("catppuccin_mocha", bookSettings?.themeId)
     }
+
+    @Test
+    fun htmlEntitiesDecodesNamedAndNumericDecimalAndHexEntities() {
+        val sample = "&ldquo;Hello,&#8221; he said &#x2014; &copy; 2026 &bull; &mdash; &hellip;"
+        val decoded = DocumentParsers.decodeHtmlEntities(sample)
+        assertEquals("“Hello,” he said — © 2026 • — …", decoded)
+    }
+
+    @Test
+    fun plainTextParserDetectsExtendedChapterHeadings() = runTest {
+        val txtFile = File(context.cacheDir, "epic_classic.txt")
+        txtFile.writeText(
+            """
+            PROLOGUE
+
+            In the beginning, long before the city woke.
+
+            BOOK I. The Journey
+
+            They set out under the autumn sun.
+
+            ACT II: The Gathering
+
+            Around the table they gathered their plans.
+            """.trimIndent()
+        )
+        val txtEntity = BookEntity(
+            uri = Uri.fromFile(txtFile).toString(),
+            contentHash = "hash_epic",
+            title = "Epic Classic",
+            authors = "Historian",
+            format = BookFormat.TXT,
+            addedAt = 1L
+        )
+        val doc = DocumentParsers.parseBook(context, txtEntity, emptyList())
+        assertEquals(3, doc.chapters.size)
+        assertEquals("PROLOGUE", doc.chapters[0].title)
+        assertEquals("BOOK I. The Journey", doc.chapters[1].title)
+        assertEquals("ACT II: The Gathering", doc.chapters[2].title)
+    }
+
+    @Test
+    fun epubParserHandlesStrikethroughSpansAndDivParagraphs() = runTest {
+        val epubFile = File(context.cacheDir, "styled_divs.epub")
+        ZipOutputStream(FileOutputStream(epubFile)).use { zip ->
+            zip.putNextEntry(ZipEntry("mimetype"))
+            zip.write("application/epub+zip".toByteArray())
+            zip.closeEntry()
+
+            zip.putNextEntry(ZipEntry("META-INF/container.xml"))
+            zip.write(
+                """
+                <?xml version="1.0"?>
+                <container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+                  <rootfiles><rootfile full-path="OEBPS/content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+                </container>
+                """.trimIndent().toByteArray()
+            )
+            zip.closeEntry()
+
+            zip.putNextEntry(ZipEntry("OEBPS/content.opf"))
+            zip.write(
+                """
+                <?xml version="1.0" encoding="UTF-8"?>
+                <package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+                  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+                    <dc:title>Styled Divs</dc:title>
+                    <dc:creator>Author</dc:creator>
+                  </metadata>
+                  <manifest>
+                    <item id="ch1" href="ch1.xhtml" media-type="application/xhtml+xml"/>
+                  </manifest>
+                  <spine><itemref idref="ch1"/></spine>
+                </package>
+                """.trimIndent().toByteArray()
+            )
+            zip.closeEntry()
+
+            zip.putNextEntry(ZipEntry("OEBPS/ch1.xhtml"))
+            zip.write(
+                """
+                <html><body>
+                  <h1>Formatting Lab</h1>
+                  <div class="direct-para">This is a div paragraph with <del>strikethrough</del> text.</div>
+                </body></html>
+                """.trimIndent().toByteArray()
+            )
+            zip.closeEntry()
+        }
+
+        val entity = BookEntity(
+            uri = Uri.fromFile(epubFile).toString(),
+            contentHash = "hash_styled_divs",
+            title = "Styled Divs",
+            authors = "Author",
+            format = BookFormat.EPUB,
+            addedAt = 1L
+        )
+        val doc = DocumentParsers.parseBook(context, entity, emptyList())
+        assertEquals(1, doc.chapters.size)
+        val blocks = doc.chapters[0].blocks
+        val para = blocks.filterIsInstance<ContentBlock.Paragraph>().firstOrNull()
+        assertNotNull(para)
+        assertTrue(para!!.content.text.contains("strikethrough"))
+        assertTrue(para.content.spans.any { it.type == InlineSpanType.STRIKETHROUGH })
+    }
 }

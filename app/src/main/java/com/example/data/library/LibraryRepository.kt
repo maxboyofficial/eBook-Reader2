@@ -29,6 +29,7 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.FileOutputStream
 import java.util.UUID
 
 class LibraryRepository(
@@ -134,18 +135,41 @@ class LibraryRepository(
     }
 
     suspend fun importSingleFile(uri: Uri): BookEntity? = withContext(Dispatchers.IO) {
-        runCatching {
+        val persistable = runCatching {
             context.contentResolver.takePersistableUriPermission(
                 uri,
                 Intent.FLAG_GRANT_READ_URI_PERMISSION
             )
+            true
+        }.getOrDefault(false)
+
+        val targetUri = if (!persistable && uri.scheme == "content") {
+            val (name, _) = queryDisplayNameAndSize(uri)
+            val importedDir = File(context.filesDir, "imported_books").apply { mkdirs() }
+            val cleanName = name.ifBlank { "book_${System.currentTimeMillis()}" }.replace('/', '_')
+            val destFile = File(importedDir, "${System.currentTimeMillis()}_$cleanName")
+            val copied = runCatching {
+                context.contentResolver.openInputStream(uri)?.use { input ->
+                    FileOutputStream(destFile).use { output ->
+                        input.copyTo(output)
+                    }
+                }
+            }.isSuccess
+            if (copied && destFile.exists() && destFile.length() > 0) {
+                Uri.fromFile(destFile)
+            } else {
+                uri
+            }
+        } else {
+            uri
         }
-        val (name, size) = queryDisplayNameAndSize(uri)
-        val existing = bookDao.getBookByUri(uri.toString())
+
+        val (name, size) = queryDisplayNameAndSize(targetUri)
+        val existing = bookDao.getBookByUri(targetUri.toString())
         val nextOrder = (bookDao.getAllBooksOnce().maxOfOrNull { it.shelfOrder } ?: -1) + 1
         val scanned = SafBookScanner.scanSingleDocument(
             context = context,
-            uri = uri,
+            uri = targetUri,
             displayName = name,
             fileSize = size,
             existing = existing,
