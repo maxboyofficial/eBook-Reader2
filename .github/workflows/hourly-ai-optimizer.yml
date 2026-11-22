@@ -1,0 +1,132 @@
+name: Hourly AI Code Scrutiny & Optimizer
+
+on:
+  schedule:
+    - cron: '0 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  optimize-slice:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v5
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Google GenAI SDK
+        run: pip install google-genai
+
+      - name: Analyze & Optimize Core Code Slice
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          python3 - << 'EOF'
+          import os, glob, random, json
+          from google import genai
+          from google.genai import types
+
+          api_key = os.environ.get("GEMINI_API_KEY", "").strip()
+          if not api_key:
+              raise ValueError("GEMINI_API_KEY secret is missing.")
+
+          client = genai.Client(api_key=api_key)
+
+          all_kt = glob.glob("app/src/main/java/**/*.kt", recursive=True)
+          priority = [f for f in all_kt if any(k in f for k in ["ReaderScreen", "PdfPageEngine", "LibraryScreen", "DocumentParsers"])]
+          pool = priority if priority and random.random() < 0.7 else all_kt
+          target_files = random.sample(pool, min(2, len(pool)))
+          print("Scrutinizing:", target_files)
+
+          files_payload = {p: open(p, "r", encoding="utf-8").read() for p in target_files}
+
+          prompt = f"""
+          You are a senior Android & Jetpack Compose performance engineer optimizing an offline ebook/PDF reader app.
+          Scrutinize these Kotlin files and fix real performance and state bugs:
+          1. Eliminate full-page refreshes or re-pagination when turning pages (cache slices/bitmaps via remember/LruCache).
+          2. Pre-render adjacent pages (currentPage - 1, currentPage + 1) on Dispatchers.IO.
+          3. Persist lastReadPage, lastReadLocator, and reading history to Room cleanly without losing state.
+          4. Fix deprecated Compose/Android APIs and memory leaks.
+
+          Rules:
+          - Only modify a file if you can make a safe, concrete, compiling improvement.
+          - Preserve all public class/function signatures used by other files.
+          - Return ONLY valid JSON:
+            {{"summary": "short commit message", "updates": [{{"path": "exact/file/path.kt", "content": "full updated file content"}}]}}
+          - If no meaningful improvement is needed, return {{"summary": "none", "updates": []}}.
+
+          Files:
+          {json.dumps(files_payload)}
+          """
+
+          response = client.models.generate_content(
+              model="gemini-2.5-flash",
+              contents=prompt,
+              config=types.GenerateContentConfig(
+                  response_mime_type="application/json",
+                  temperature=0.2,
+              ),
+          )
+
+          result = json.loads(response.text)
+          updates = result.get("updates", [])
+          if not updates:
+              print("No changes needed this hour.")
+              exit(0)
+
+          for item in updates:
+              path = item["path"]
+              if path in files_payload and item["content"].strip():
+                  with open(path, "w", encoding="utf-8") as f:
+                      f.write(item["content"])
+                  print(f"Updated: {path}")
+
+          with open(".ai_commit_msg", "w", encoding="utf-8") as f:
+              f.write(result.get("summary", "perf: hourly AI code optimization"))
+          EOF
+
+      - name: Verify Compilation Before Pushing
+        id: verify
+        run: |
+          if [ -n "$(git status --porcelain)" ]; then
+            if gradle compileDebugKotlin; then
+              echo "valid=true" >> $GITHUB_OUTPUT
+            else
+              echo "Compilation failed! Reverting AI edits."
+              git checkout -- .
+              echo "valid=false" >> $GITHUB_OUTPUT
+            fi
+          else
+            echo "valid=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Commit & Push Valid Improvements
+        if: steps.verify.outputs.valid == 'true'
+        run: |
+          git config user.name "Mochi AI Optimizer"
+          git config user.email "actions@github.com"
+          git add app/src/
+          MSG=$(cat .ai_commit_msg)
+          rm -f .ai_commit_msg
+          git commit -m "perf(ai): $MSG"
+          git push
