@@ -43,16 +43,9 @@ jobs:
             -keysize 2048 \
             -validity 10000 \
             -dname "CN=Mochi Reader,O=Mochi,C=US"
+          cp my-upload-key.jks app/my-upload-key.jks
 
       - name: Build Release APK
-        env:
-          RELEASE_STORE_FILE: my-upload-key.jks
-          RELEASE_STORE_PASSWORD: android
-          RELEASE_KEY_ALIAS: upload
-          RELEASE_KEY_PASSWORD: android
-          KEYSTORE_PASSWORD: android
-          KEY_PASSWORD: android
-          KEY_ALIAS: upload
         run: |
           cat << 'EOF' > init-signing.gradle.kts
           allprojects {
@@ -61,7 +54,7 @@ jobs:
                 val signingConfigs = androidExt.javaClass.getMethod("getSigningConfigs").invoke(androidExt)
                 val releaseConfig = signingConfigs.javaClass.getMethod("findByName", String::class.java).invoke(signingConfigs, "release")
                 if (releaseConfig != null) {
-                  releaseConfig.javaClass.getMethod("setStoreFile", java.io.File::class.java).invoke(releaseConfig, file("my-upload-key.jks"))
+                  releaseConfig.javaClass.getMethod("setStoreFile", java.io.File::class.java).invoke(releaseConfig, rootProject.file("my-upload-key.jks"))
                   releaseConfig.javaClass.getMethod("setStorePassword", String::class.java).invoke(releaseConfig, "android")
                   releaseConfig.javaClass.getMethod("setKeyAlias", String::class.java).invoke(releaseConfig, "upload")
                   releaseConfig.javaClass.getMethod("setKeyPassword", String::class.java).invoke(releaseConfig, "android")
