@@ -70,7 +70,7 @@ jobs:
 
           Rules:
           - Only modify a file if you can make a safe, concrete, compiling improvement.
-          - Preserve all public class/function signatures used by other files.
+          - Preserve all public class/function signatures and existing UI features.
           - Return ONLY valid JSON:
             {{"summary": "short commit message", "updates": [{{"path": "exact/file/path.kt", "content": "full updated file content"}}]}}
           - If no meaningful improvement is needed, return {{"summary": "none", "updates": []}}.
@@ -80,7 +80,7 @@ jobs:
           """
 
           response = client.models.generate_content(
-              model="gemini-2.5-flash",
+              model="gemini-3.8-flash",
               contents=prompt,
               config=types.GenerateContentConfig(
                   response_mime_type="application/json",
@@ -97,6 +97,11 @@ jobs:
           for item in updates:
               path = item["path"]
               if path in files_payload and item["content"].strip():
+                  old_lines = len(files_payload[path].splitlines())
+                  new_lines = len(item["content"].splitlines())
+                  if new_lines < old_lines * 0.85:
+                      print(f"Skipping {path}: AI removed too many lines ({old_lines} -> {new_lines})")
+                      continue
                   with open(path, "w", encoding="utf-8") as f:
                       f.write(item["content"])
                   print(f"Updated: {path}")
