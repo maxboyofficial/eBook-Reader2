@@ -45,7 +45,32 @@ jobs:
             -dname "CN=Mochi Reader,O=Mochi,C=US"
 
       - name: Build Release APK
-        run: gradle assembleRelease
+        env:
+          RELEASE_STORE_FILE: my-upload-key.jks
+          RELEASE_STORE_PASSWORD: android
+          RELEASE_KEY_ALIAS: upload
+          RELEASE_KEY_PASSWORD: android
+          KEYSTORE_PASSWORD: android
+          KEY_PASSWORD: android
+          KEY_ALIAS: upload
+        run: |
+          cat << 'EOF' > init-signing.gradle.kts
+          allprojects {
+            afterEvaluate {
+              extensions.findByName("android")?.let { androidExt ->
+                val signingConfigs = androidExt.javaClass.getMethod("getSigningConfigs").invoke(androidExt)
+                val releaseConfig = signingConfigs.javaClass.getMethod("findByName", String::class.java).invoke(signingConfigs, "release")
+                if (releaseConfig != null) {
+                  releaseConfig.javaClass.getMethod("setStoreFile", java.io.File::class.java).invoke(releaseConfig, file("my-upload-key.jks"))
+                  releaseConfig.javaClass.getMethod("setStorePassword", String::class.java).invoke(releaseConfig, "android")
+                  releaseConfig.javaClass.getMethod("setKeyAlias", String::class.java).invoke(releaseConfig, "upload")
+                  releaseConfig.javaClass.getMethod("setKeyPassword", String::class.java).invoke(releaseConfig, "android")
+                }
+              }
+            }
+          }
+          EOF
+          gradle assembleRelease --init-script init-signing.gradle.kts
 
       - name: Copy Release APK
         run: cp app/build/outputs/apk/release/app-release.apk Mochi-Reader.apk
