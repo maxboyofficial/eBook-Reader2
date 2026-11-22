@@ -42,7 +42,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           python3 - << 'EOF'
-          import os, glob, random, json
+          import os, glob, random, json, time
           from google import genai
           from google.genai import types
 
@@ -79,14 +79,30 @@ jobs:
           {json.dumps(files_payload)}
           """
 
-          response = client.models.generate_content(
-              model="gemini-3.8-flash",
-              contents=prompt,
-              config=types.GenerateContentConfig(
-                  response_mime_type="application/json",
-                  temperature=0.2,
-              ),
-          )
+          models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-flash-latest"]
+          response = None
+          for model_name in models_to_try:
+              for attempt in range(2):
+                  try:
+                      print(f"Trying {model_name} (attempt {attempt + 1})...")
+                      response = client.models.generate_content(
+                          model=model_name,
+                          contents=prompt,
+                          config=types.GenerateContentConfig(
+                              response_mime_type="application/json",
+                              temperature=0.2,
+                          ),
+                      )
+                      break
+                  except Exception as e:
+                      print(f"{model_name} busy/unavailable: {e}")
+                      time.sleep(5)
+              if response is not None:
+                  break
+
+          if response is None:
+              print("All Gemini models temporarily busy (503). Will retry next hour.")
+              exit(0)
 
           result = json.loads(response.text)
           updates = result.get("updates", [])
