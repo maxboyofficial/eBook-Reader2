@@ -1,8 +1,8 @@
-name: Hourly AI Code Scrutiny & Optimizer
+name: AI Code Scrutiny & Optimizer (Every 2 Days)
 
 on:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '15 20 */2 * *' # 02:00 AM Nepal Time (GMT+05:45) every 2 days
   workflow_dispatch:
 
 permissions:
@@ -79,35 +79,31 @@ jobs:
           {json.dumps(files_payload)}
           """
 
-          models_to_try = ["gemini-3.8-flash", "gemini-3.8-flash-lite", "gemini-flash-latest"]
           response = None
-          for model_name in models_to_try:
-              for attempt in range(2):
-                  try:
-                      print(f"Trying {model_name} (attempt {attempt + 1})...")
-                      response = client.models.generate_content(
-                          model=model_name,
-                          contents=prompt,
-                          config=types.GenerateContentConfig(
-                              response_mime_type="application/json",
-                              temperature=0.2,
-                          ),
-                      )
-                      break
-                  except Exception as e:
-                      print(f"{model_name} busy/unavailable: {e}")
-                      time.sleep(5)
-              if response is not None:
+          for model_name in ["gemini-3.8-flash", "gemini-3.8-flash-lite"]:
+              try:
+                  print(f"Trying {model_name}...")
+                  response = client.models.generate_content(
+                      model=model_name,
+                      contents=prompt,
+                      config=types.GenerateContentConfig(
+                          response_mime_type="application/json",
+                          temperature=0.2,
+                      ),
+                  )
                   break
+              except Exception as e:
+                  print(f"{model_name} unavailable ({e}), trying fallback...")
+                  time.sleep(3)
 
           if response is None:
-              print("All Gemini models temporarily busy (503). Will retry next hour.")
+              print("All models temporarily busy (503/429). Skipping cleanly.")
               exit(0)
 
           result = json.loads(response.text)
           updates = result.get("updates", [])
           if not updates:
-              print("No changes needed this hour.")
+              print("No changes needed.")
               exit(0)
 
           for item in updates:
@@ -123,7 +119,7 @@ jobs:
                   print(f"Updated: {path}")
 
           with open(".ai_commit_msg", "w", encoding="utf-8") as f:
-              f.write(result.get("summary", "perf: hourly AI code optimization"))
+              f.write(result.get("summary", "perf: AI code optimization"))
           EOF
 
       - name: Verify Compilation Before Pushing
