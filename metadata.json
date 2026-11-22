@@ -1,0 +1,6 @@
+{
+  "name": "Mochi Reader",
+  "description": "Offline-first ebook, PDF, and Markdown reader with Material 3 Expressive & Liquid Glass design, custom themes, and library shelf views.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

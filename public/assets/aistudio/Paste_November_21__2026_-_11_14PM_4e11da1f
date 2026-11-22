@@ -1,0 +1,163 @@
+# ROLE AND ENVIRONMENT
+You are a senior Android engineer and product designer building "Mochi", a production-quality, offline-first ebook/PDF/Markdown reader for Android in Kotlin and Jetpack Compose. Write complete, working code. No pseudo-code, no silent stubs, no "TODO: implement".
+
+Environment rules (this is AI Studio Build mode):
+- Single module, single activity, Kotlin + Jetpack Compose only (no Java, no XML layouts). Organize code with packages inside the one app module.
+- Write files directly into the project. Do NOT paste code into chat. Build, run in the emulator, and fix build errors yourself.
+- TOKEN SAVING: keep every chat message under 120 words. Do not restate this spec, do not explain code unless I ask. After each milestone give only: what works, what is stubbed or failing, what is next.
+- The emulator has no books. Create small sample test files (generated EPUBs, PDFs, Markdown and TXT, or public-domain texts) so every milestone can be tested.
+- Work in the MILESTONES at the end. Finish each as a working, runnable app before the next, then stop and wait for "next".
+- If a dependency cannot resolve or work here (Readium, PDFium, GPU curl, etc.), say so, propose the closest alternative (for example Android's built-in PdfRenderer for fixed-layout PDFs, or a simpler EPUB parser), and continue. Keep a visible "Known gaps" list in the project README. If unsure about an API, version, license or color value, say so instead of inventing it.
+- No Firebase, no Gemini API calls, no accounts, no analytics, no ads, no INTERNET permission.
+
+# APP IDENTITY
+Name: Mochi (store title "Mochi Reader"). Application ID: app.mochireader.reader. Brand feel: soft, round, friendly, calm. Default light theme: Sakura Milk. Default dark theme: Midnight Sakura. Design an original icon concept (a simple rounded rice-cake silhouette with a small bookmark ribbon, no copyrighted characters) and a few alternate pastel launcher icons. Use "Mochi" consistently in strings, onboarding and the privacy screen.
+
+# PRODUCT VISION AND PRINCIPLES
+A very advanced reader with a very minimal interface. The default experience is calm and simple (open a book, read, highlight). Depth is one tap away behind progressive disclosure ("Advanced" expanders). It should feel as simple and polished as Apple Books, look like a modern Liquid Glass interface on Material 3 Expressive, and have the page turning, bookshelf feel and control depth of Moon+ Reader, without the option overload of Librera.
+- Content first: while reading, only the text shows. Chrome appears on a center tap and auto-hides.
+- NEVER modify the user's original files. Ever.
+- 100% offline: every feature works with no network. Privacy by default: no ads, no analytics, no trackers, no account.
+- Everything configurable has a sensible default and a one-tap reset. Undo/redo everywhere.
+- 60fps minimum, 120fps on capable displays. Page turns never stutter.
+- Imitate interaction patterns and feel only. Do NOT use Apple or Moon+ names, logos, icons, textures, sounds, screenshots or fonts (no SF fonts). Use open-licensed fonts (Inter for UI) and open icons (Material Symbols or Phosphor).
+
+# DESIGN LANGUAGE: MATERIAL 3 EXPRESSIVE + LIQUID GLASS + BOOKS-STYLE SIMPLICITY
+Each has one job so they do not fight:
+- Material 3 Expressive = structure: MaterialExpressiveTheme with MotionScheme.expressive() and the motion tokens for all animation, MaterialShapes and shape morphing (for example the book cover morphing into the reader as a shared-element transition), expressive components (HorizontalFloatingToolbar for the reader and selection toolbars, connected button groups/segmented buttons, FAB menu, wavy progress and loading indicators), and emphasized typography. These APIs were experimental/opt-in when I last checked: verify the current stable status and versions. If something is unavailable, fall back to standard Material 3 with custom spring animations, behind a thin design-system layer.
+- Liquid Glass = material for floating chrome only (reader bars, scrubber, bottom nav, sheets, toolbars, popovers; never the book text): translucent container fill with background blur, a tint pulled from the content behind, a thin 1dp luminous border (brighter on top), a soft shadow, capsule or very rounded shapes with concentric radii, controls floating with margins. Blur via RenderEffect on API 31+, an optional AGSL lens/highlight effect on API 33+, and on API 26-30 a semi-opaque tonal surface with the same border and shadow. Max 2 glass layers on screen, capped blur, and freeze the blur during page-turn animations. Provide "Solid chrome" (reduce transparency) and "Reduce motion" toggles, guarantee text contrast on glass with an adaptive scrim, and run an automated contrast check across all themes.
+- Apple Books restraint: "Reading Now" home (large current-book card, Continue shelf, Want to Read shelf, Collections); reader with generous margins; a calm progress line ("Page 42 of 310 · 12 pages left in chapter"); a scrubber with a floating chapter/page preview bubble; an "Aa" glass sheet with A-/A+, font previews, circular theme swatches, a page-turn selector (Slide, Curl, Scroll) and brightness, with everything else under "More options" (changes apply live behind the sheet); a floating selection toolbar; pull-down in-context search; light haptics; no badges or nags.
+
+# TECH STACK
+Kotlin, Jetpack Compose, Material 3 (Expressive APIs, see above), Navigation Compose, min SDK 26, target the latest stable SDK. Room (SQLite, with FTS for search), DataStore, Coroutines/Flow, a lightweight DI choice (Hilt or Koin, justify it), Coil, WorkManager, Baseline Profiles and macrobenchmark scaffolding.
+EPUB: the Readium Kotlin Toolkit (BSD) for parsing, pagination, locators and decorations, unless you justify better. PDF: a PDFium-based renderer; avoid AGPL libraries (such as MuPDF) unless you flag the licensing first. Also: CBZ/CBR, TXT, Markdown, FB2. Stage MOBI/AZW3 and DOCX later and say which library you would use. Markdown: a bundled CommonMark/GFM parser (for example commonmark-java or a Kotlin equivalent). Justify every dependency in one line.
+
+# PERMISSIONS, PRIVACY AND OFFLINE
+- Use the Storage Access Framework (ACTION_OPEN_DOCUMENT_TREE and ACTION_OPEN_DOCUMENT) with persisted URI permissions. Do NOT request MANAGE_EXTERNAL_STORAGE, READ_EXTERNAL_STORAGE, or QUERY_ALL_PACKAGES.
+- Register intent filters so Mochi appears in "Open with" and "Share to" for EPUB, PDF, CBZ, MD and TXT (content URIs need no storage permission).
+- No INTERNET permission. Dictionaries, themes, fonts and sticker packs are imported as files through SAF. One privacy screen states exactly what the app can access. A credits/licenses screen lists every bundled font, dictionary and library with its license.
+
+# LIBRARY AND BOOKSHELF
+- Add one or more root folders; scan recursively in the background and detect changes.
+- Three views via one segmented control: Shelf, Folders (mirrors the real directory tree with breadcrumbs: this is the "folder-wise" view), Collections (user collections, tags, automatic series).
+- Shelf styles (a setting; default is the flat grid): (1) Wooden shelf in the spirit of classic iBooks/Moon+: books standing on planks with a front ledge, contact shadows and subtle spine depth, wood generated procedurally or from an open-licensed texture and tinted by theme shelf tokens, plus an optional user shelf background image with a dim/blur slider; (2) Flat grid with large covers, soft shadows and a progress ring; (3) List with small cover, title, author and a progress bar.
+- Long-press to drag, reorder and drop a book onto another to make a stack. Optional spine thickness by page count. Generated covers (title on a themed gradient) for books without covers. Cover-to-reader morph transition. Pull down to rescan. A large-title header that collapses on scroll.
+- Sort by title, author, last read, date added, progress, size. Filter by format, status (unread, reading, finished) and tag. Fast search over title, author and optionally annotation text. Batch actions (collection, mark finished, hide, remove from library). Never delete files unless the user explicitly chooses "delete file" with a confirmation. Cover extraction cached off the main thread. Duplicate detection by content hash with merge/hide.
+- Must stay smooth with 5,000 books and with 500 MB PDFs.
+
+# READER: PAGE TURNING, LAYOUT, CONTROLS
+Interactive page curl (a real effect, not a canned animation):
+- The page follows the finger from any corner or edge. The fold line, curl radius and shadow update every frame. Render the current and next pages as pre-rendered bitmaps onto a GPU mesh or shader (OpenGL ES, or AGSL on API 33+, with a Canvas/mesh fallback). Draw the curled front, the page back (mirrored, slightly faded real text), a dynamic shadow on the page below, and a soft specular highlight along the fold. Physics: velocity-based completion or cancel, inertia, spring settle, tap to turn. Settings: curl strength, shadow strength, show page back, speed, corner vs. edge grab.
+- Other modes on the same gesture engine: slide, cover-flip, stack, fade, vertical scroll, none. All honor Reduce motion. Never run layout during a gesture, pool hardware bitmaps, pre-render neighbors, include a jank benchmark.
+Layout: font family, size, line height, paragraph spacing, per-side margins, alignment (left or justify), first-line indent, hyphenation (Knuth-Liang with bundled patterns), single/dual page (auto dual on tablets, foldables and landscape), columns, orientation lock. Bundle open-licensed fonts (a long-reading serif, a sans, a dyslexia-friendly font, a mono, and a few handwriting fonts) and allow importing TTF/OTF. Reading position is a locator (progression, chapter, text-quote anchor), so positions and highlights survive layout changes. Optional reading ruler/focus line and an optional themed mini status bar.
+Controls (Moon+-style depth, under "Advanced"): configurable tap zones with presets (Classic, Left-handed, Scroll); an action map assigning actions (next/prev, chapter jump, toggle theme, brightness, TTS, bookmark, search, undo jump) to taps, swipes, long-press and volume keys; five auto-scroll modes (rolling blind, by pixel, by line, by page, continuous) with real-time speed; left-edge swipe for brightness.
+
+# PDF AND REFLOW
+Two modes with a one-tap toggle. (1) Fixed layout: smooth pinch-zoom and pan (zoom up to at least 1000%), fit-width/fit-page, auto margin crop, smart double-tap zoom into the text column. (2) Reflow: extract positioned text with PDFium and rebuild flowing text. Implement explicitly: line grouping by baseline and font metrics, multi-column detection with recursive XY-cut, reading-order reconstruction, paragraph detection by line gap and indent, dehyphenation, repeated header/footer/page-number removal, footnote and caption detection, figures and tables kept as inline images, results cached per file and computed lazily in the background, and a fallback to fixed layout for low-confidence pages with a small notice. Unit-test the column detector and dehyphenation.
+
+# ANNOTATIONS (non-destructive, a hard requirement)
+- The original file is NEVER written to. All annotations live in Room.
+- Basic types: highlight (several colors, plus style variants: underline, squiggly, strikethrough), notes attached to a selection (Markdown, see below), named bookmarks, freehand ink (pen, highlighter-pen, eraser; stylus pressure and tilt, palm rejection, optional finger drawing).
+- Anchoring: EPUB/text via locator + text-quote selector (prefix, exact, suffix) + progression; PDF via page index + normalized quad coordinates (0..1) + text quote; ink and shapes as vector paths in normalized page coordinates on an overlay layer (crisp at any zoom).
+- Selection UX: long-press, drag handles, a floating glass toolbar (colors, note, copy, define, translate-via-intent, search, share). Also a "quick highlight" mode where dragging across text highlights instantly. Tapping a highlight opens a popover (color, note, delete).
+- Annotations panel per book (by chapter; filter by color/type; tap to jump) and a global "All notes" screen with search.
+- Highlight colors map to theme roles so they stay readable in every theme, and a color-blind-safe palette option exists.
+
+## ANNOTATION STUDIO (vector markup with CAD-style precision)
+A drawing mode (a floating glass toolbar) for PDFs, comics and fixed pages:
+- Tools: pen, highlighter, line, polyline, ARROW (single/double head, several head styles), rectangle, rounded rectangle, ellipse/circle, polygon, revision cloud, callout/text box, dimension and measure (distance, angle, polyline length, area), stamp/sticker, spotlight/cutout, stroke eraser and object eraser, lasso/box select.
+- Precision: snapping (grid, endpoints, midpoints, centers, intersections, text-line boundaries, page edges) with an on/off toggle; ortho/polar constraint (hold to lock to 0/45/90 degrees, or 15-degree steps); a magnifier loupe and an offset "precision pointer" so a finger does not cover the target; stylus hover preview; a properties panel with numeric entry for position, length, angle, width, height and stroke width.
+- Objects: every markup is an object with handles for move, resize and rotate; multi-select; group/ungroup; align/distribute; duplicate; copy/paste across pages; z-order; lock; named layers (visibility, lock, color) such as "My notes" and "Review"; line styles (dash, dot, arrowheads), fill, opacity; style presets and recent styles; unlimited undo/redo per book.
+- Measuring: calibrate a scale on a page (draw a line, enter a real distance), units (mm, cm, in, ft, px), and measurement objects persist with their scale.
+- Command palette (type to run): for example "line", "arrow", "undo", "layer review", "snap off", "theme nord", "go to 45", "highlight yellow". The same palette is available in the reader (search all actions and settings).
+- Export without touching the source: a flattened or standard-annotation PDF COPY (never overwrite), SVG export of the markup layer, and a JSON backup.
+- Reflowable EPUB/MD text can have shapes anchored to a text range or placed in a "page snapshot" mode. State this limitation clearly in the UI.
+
+# MARKDOWN
+- Reader: open .md/.markdown natively, rendered with GitHub-flavored Markdown (tables, task lists, fenced code with syntax highlighting, footnotes, front matter shown as a header card), a heading-based table of contents, relative images, and optional offline math via a bundled KaTeX or an equivalent. Treat a folder as a "vault": [[wikilinks]] open the matching note in the folder, with a simple backlinks list.
+- Notes are Markdown: a note editor with a formatting toolbar (bold, italic, lists, checklist, quote, code, link, heading), a live-preview toggle, #tags, and [[links]]. Notes can include checklists and show in the annotations panel rendered.
+- Export: Markdown per book with YAML front matter (title, author, source, dates, tags), highlights as blockquotes under chapter headings with page/location, notes, and user-editable templates with placeholders ({{quote}}, {{note}}, {{page}}, {{chapter}}, {{color}}, {{tags}}, {{date}}) for Obsidian/Logseq-style layouts. "Copy highlight as Markdown" with an optional citation. Optionally auto-write exports to a chosen vault folder (SAF) as separate .md files, never inside the book file.
+
+# OFFLINE DICTIONARY AND VOCABULARY
+- Tap or select a word to see a glass popup with definitions, part of speech, pronunciation (system TTS) and examples. Smart lookup: lemmatization and stemming (running to run), phrase and idiom lookup, and "did you mean" suggestions. Works entirely offline.
+- Bundle a compact English dictionary (for example derived from WordNet, whose license is permissive, stored in a compressed SQLite with FTS). Allow importing StarDict (.ifo/.idx/.dict/.dict.dz), dictd, and Wiktionary-derived packs via SAF, for any language. Manage multiple dictionaries (order, enable/disable, per-book-language default). Show attribution/licensing in the credits screen. Verify the license of everything you bundle.
+- Vocabulary builder: save a word with its context sentence and book, review with simple spaced repetition (SM-2), and export to Anki-compatible CSV/TSV and Markdown. An optional "highlight unknown words" mode based on the saved vocabulary.
+- Translation is only via an opt-in system intent (nothing online inside the app).
+
+# THEMES (a headline feature, all offline)
+A theme is a data object, not hard-coded styles:
+- Semantic roles: background, surface, surfaceVariant, text, textSecondary, accent, accentContainer, link, selection, eight highlight colors, optional paper tint.
+- Glass tokens: glassTint, glassTintAlpha, glassBorder, glassHighlight, glassShadow, blurRadius, prefersSolidChrome. Shelf tokens: shelfWoodTint, shelfPlankHighlight, shelfPlankShadow, shelfLedgeColor, shelfStyleDefault. Decor tokens: stickerSet, washiTapePattern, frameStyle, progressStyle.
+- Each theme declares light or dark and generates a full Material 3 ColorScheme (for the Expressive theme) plus a reader palette. Provide light-glass and dark-glass looks per family. "Glass intensity": Off, Subtle, Rich.
+- Theme editor: per-role pickers with live preview over a sample page and glass chrome, a contrast checker (warn below WCAG AA for body text), duplicate/rename/delete.
+- OFFLINE THEME PACKS: export/import a theme as a single file (.mochitheme: a zip containing theme.json, optional fonts, shelf background, sticker images, credits/license). Imported via SAF with validation. No theme store and no network. All bundled themes, fonts and stickers ship inside the app.
+- Options: per-book theme override, auto light/dark (system, schedule, or ambient light sensor), "match status/navigation bars", optional Material You dynamic color on Android 12+.
+
+Bundled themes (use the official published palettes; if you are not certain of a hex value, say so instead of guessing):
+- Catppuccin Latte, Frappé, Macchiato, Mocha. Mocha reference: base #1e1e2e, mantle #181825, crust #11111b, text #cdd6f4, surface0 #313244, overlay0 #6c7086, mauve #cba6f7, pink #f5c2e7, blue #89b4fa, green #a6e3a1, yellow #f9e2af, red #f38ba8, peach #fab387, teal #94e2d5, lavender #b4befe.
+- Nord: nord0 #2e3440, nord1 #3b4252, nord2 #434c5e, nord3 #4c566a, nord4 #d8dee9, nord6 #eceff4, nord7 #8fbcbb, nord8 #88c0d0, nord9 #81a1c1, nord10 #5e81ac, nord11 #bf616a, nord12 #d08770, nord13 #ebcb8b, nord14 #a3be8c, nord15 #b48ead, plus a light variant.
+- Dracula: background #282a36, current line #44475a, foreground #f8f8f2, comment #6272a4, cyan #8be9fd, green #50fa7b, orange #ffb86c, pink #ff79c6, purple #bd93f9, red #ff5555, yellow #f1fa8c.
+- Gruvbox (dark/light), Tokyo Night, Rose Pine (plus Dawn and Moon), Solarized (light/dark), Everforest, Kanagawa, One Dark, Material baseline, Material You dynamic.
+- Reading classics: Paper, Sepia, Newsprint, True Black (AMOLED), Dim Gray, E-ink (pure black on white, no animations, solid chrome).
+- Cool/hacker: Cyberpunk Neon, Synthwave, Terminal Green, Ice Blue.
+- Pastel/kawaii (see CUTE and COZY PACK).
+Dark-mode quality bar: no harsh pure #fff on pure #000 unless the theme is explicitly high-contrast; a software warm-light filter (color-matrix overlay with intensity and schedule, independent of OEM settings); a dimmer below the system minimum brightness; optional smart dim/invert for diagrams in dark themes, per book.
+
+# CUTE AND COZY PACK (personalization for everyone, SFW, all original art)
+Present it simply as a "Cute & Cozy" decor pack in Settings (not labeled by gender in the UI). Everything is original, vector or procedural art, no copyrighted characters.
+- Pastel themes with full palettes and accessible contrast: Sakura Milk (#fff5f7 background, #ff8fb1 accent), Strawberry Milk, Matcha Latte, Lavender Fog (#f6f2ff background, #b79cff accent), Peach Soda, Mint Cloud, Cotton Candy, Rose Gold, Cottagecore Meadow, Cloud Nine, and darks: Midnight Sakura (#1f1a24 background, #f4a6c8 accent), Starry Lavender, Berry Night.
+- Decor: sticker annotations (hearts, stars, sparkles, flowers, bows, clouds), washi-tape highlight styles (patterned semi-transparent strips), ribbon bookmarks with small charms, decorative dividers and page frames, alternate cute progress indicators (fill-a-heart, growing flower, a Mochi blob that fills), and several alternate pastel app icons.
+- Handwriting and script fonts (open-licensed, such as Caveat, Patrick Hand, Kalam, Dancing Script: verify each license) for notes, journal and quote cards.
+- Quote cards: turn any highlight into a shareable image card (theme, font and sticker selectable; saved locally or shared via the system share sheet).
+- Reading journal: per-book notes, mood/rating stickers, and a reading log, all local and optional.
+- An original, simple Mochi mascot appears only in empty states and onboarding. It never nags, and it can be turned off.
+
+# QUALITY-OF-LIFE CHECKLIST (all of these, with sensible defaults)
+- Instant resume at the exact position; "undo jump" button after any big navigation; per-book remembered settings; keep-screen-awake options; orientation lock.
+- "Time left in chapter/book" estimates from the user's actual reading speed; calm progress line with a scrubber and chapter ticks.
+- Footnote and endnote popovers (no losing your place); tap an image or table to zoom in a full-screen viewer; "copy with citation".
+- Fast in-book search with context snippets and a global full-text library search (books and notes); a command palette for every action.
+- Dyslexia and accessibility: dyslexia-friendly font, adjustable letter/word/line spacing, high-contrast themes, color-blind-safe highlights, TalkBack labels, large-text support, TTS.
+- One-handed and thumb-zone friendly layout (controls reachable at the bottom), left-handed mode.
+- Focus mode (dim everything but the current paragraph or line), zen mode (all chrome hidden), study mode (annotations-first side panel on tablets).
+- Sleep timer; reading goals and streaks (optional, quiet); no notifications by default.
+- Import: Moon+ Reader .mrexpt annotation exports (best-effort, schema is sparsely documented, say so), Kindle "My Clippings.txt", Readwise-style CSV. Export: JSON, Markdown, CSV, Anki, SVG, annotated PDF copy.
+- Backup/restore the whole database and settings to a user-chosen folder (SAF) in an open, file-sync-friendly format. A portable sync-folder mode so positions and annotations can follow the user across devices through any file-sync tool.
+- File handling: open from the file manager and share sheet, remember the last folder, handle corrupt or DRM-protected files with a short friendly message (never attempt DRM removal), and warn before any action that could lose data.
+- Performance: instant cold start, a lazy-loaded library, memory-safe rendering for huge PDFs, and battery-aware animation.
+- Text-to-speech (system engine) with sentence-level highlight following, speed control, a sleep timer, and a media-style notification.
+- Reading statistics (time, pages, streaks) stored locally with simple charts, opt-in. Home-screen widgets (continue reading, a shelf) and app shortcuts.
+
+# UI/UX SPEC
+- A floating glass bottom bar with three items (Library, Notes, Settings) that collapses on scroll. Large touch targets, one-handed friendly.
+- Library header: a large emphasized-type title, a search pill, and the view switch. Reader chrome: a thin floating top pill (back, title, bookmark, "Aa") and the bottom scrubber, both glass and auto-hiding.
+- Settings: a single-column grouped list with search and presets (Novel, Study, Night, Cozy). Advanced options sit behind "Advanced" expanders, so the default view has about 10 controls. The reader sheet has three tabs only: Theme, Text, Page.
+- Onboarding: 3 screens at most, ending on theme choice. Friendly short empty and error states. Localization-ready strings, RTL support, large-text support, TalkBack labels on every control.
+
+# NON-GOALS
+No social features, no accounts, no store, no DRM circumvention, no ads, no online features and no AI features in the base build.
+
+# DATA MODEL (start here and improve it, noting changes)
+Book(id, uri, contentHash, title, authors, series, seriesIndex, format, coverPath, addedAt, lastOpenedAt, progress, status, shelfOrder), Folder, Collection, BookCollection, Tag, BookTag, Position(bookId, locatorJson, updatedAt), Annotation(id, bookId, type, colorRole, locatorJson, quoteExact, quotePrefix, quoteSuffix, noteMarkdown, tags, createdAt, updatedAt), MarkupObject(id, bookId, pageIndex, layerId, type, geometryJson, styleJson, locked, z, createdAt), Layer(id, bookId, name, visible, locked, color), Scale(bookId, pageIndex, unit, pixelsPerUnit), Dictionary(id, name, language, path, enabled, order), VocabularyWord(id, word, lemma, contextSentence, bookId, srsState, nextReview), ThemeEntity(id, name, isDark, paletteJson incl. glass/shelf/decor tokens, builtIn), BookSettings(bookId, themeId?, fontOverride?, layoutOverrideJson?), ActionMap(id, gesture, action), ExportTemplate(id, name, body).
+
+# MILESTONES (one per response, then wait for "next")
+A: App shell, the theme engine with every bundled theme (including glass, shelf and decor tokens, the Cute & Cozy themes, offline .mochitheme import/export, the editor and contrast checker), the glass component library, and the library with SAF folder scanning, covers, Reading Now, the three views and the three shelf styles with drag/stack.
+B: The EPUB/TXT/Markdown reader: layout and the "Aa" sheet, slide/fade/scroll/none page turns, position save/restore, table of contents, scrubber, in-book search, footnote popovers, image zoom, action map, auto-scroll, command palette, cover-to-reader morph.
+C: Standard annotations (highlights, notes with Markdown editor, bookmarks, quick-highlight), the annotations panel and global notes, Markdown/JSON/CSV exports with templates, quote cards, and the original-file-hash test.
+D: The offline dictionary (bundled English, StarDict/dictd import, lemmatization, popup) and the vocabulary builder with Anki export.
+E: The PDF fixed-layout reader, then the Annotation Studio (shapes, arrows, snapping, ortho, layers, measure and calibration, numeric properties, command palette), and the annotated-copy and SVG exports.
+F: The interactive page curl (GPU) with benchmarks, applied to the EPUB and PDF readers.
+G: The PDF reflow engine with tests.
+H: TTS, statistics, backup/sync-folder, imports (Moon+ .mrexpt, Kindle clippings), widgets, accessibility pass, performance benchmarks, polish and release hardening.
+
+# ACCEPTANCE CRITERIA (apply wherever they touch)
+- The original file's hash never changes after any annotation or markup (automated test).
+- With glass on, page turns hold 60fps (120fps where supported) on a mid-range profile. With "Solid chrome" there is no blur or translucency; with "Reduce motion" springs and morphs degrade to fades.
+- All bundled themes pass chrome and body contrast checks.
+- The dictionary, themes, fonts and stickers all work in airplane mode, and the manifest has no INTERNET and no storage-wide permissions.
+- The page curl follows the finger, casts a dynamic shadow, shows the page back, and completes or cancels by velocity.
+- Annotation Studio: snapping, ortho, numeric edit, layers and undo/redo all work, and a measured length matches the calibrated scale.
+- No Apple or Moon+ trademarks, fonts or assets anywhere. Every bundled font, dictionary and library appears in the credits screen with its license.
+
+# START NOW
+Begin with Milestone A. Make a short plan (under 120 words), then build it.
