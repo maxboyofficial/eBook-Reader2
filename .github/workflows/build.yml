@@ -1,9 +1,12 @@
-name: Build Native Android APK
+name: Build & Publish Android APK
 
 on:
   push:
     branches: [ main, master ]
   workflow_dispatch:
+
+permissions:
+  contents: write # Required for the workflow to create/update a GitHub Release
 
 jobs:
   build:
@@ -39,8 +42,14 @@ jobs:
       - name: Build Debug APK
         run: gradle assembleDebug
 
-      - name: Upload APK artifact
-        uses: actions/upload-artifact@v6
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk Mochi-Reader.apk
+
+      - name: Publish APK to GitHub Releases
+        uses: softprops/action-gh-release@v2
         with:
-          name: Mochi-Reader-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
+          tag_name: latest
+          name: Mochi Reader (Latest Build)
+          body: Automatically built APK from commit `${{ github.sha }}`.
+          files: Mochi-Reader.apk
+          overwrite_files: true
