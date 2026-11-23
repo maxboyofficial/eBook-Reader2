@@ -35,12 +35,15 @@ jobs:
           override: true
           profile: minimal
 
-      # ----- Android NDK -----
-      - name: Install Android NDK
-        uses: android-actions/setup-android@v2
+      # ----- Android SDK & NDK -----
+      - name: Setup Android SDK and NDK
+        uses: android-actions/setup-android@v3
         with:
-          ndk-version: "25.2.9519653"
-          api-level: 24
+          packages: |
+            platform-tools
+            build-tools;34.0.0
+            platforms;android-34
+            ndk;25.2.9519653
 
       # ----- Run unit tests (optional) -----
       - name: Run Unit Tests
