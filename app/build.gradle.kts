@@ -1,146 +1,67 @@
-import com.google.gms.googleservices.GoogleServicesPlugin.MissingGoogleServicesStrategy
-
 plugins {
-  alias(libs.plugins.android.application)
-  alias(libs.plugins.kotlin.compose)
-  alias(libs.plugins.google.devtools.ksp)
-  alias(libs.plugins.secrets)
-  alias(libs.plugins.google.services)
+    alias(libs.plugins.android.application)
 }
 
 android {
-  namespace = "com.example"
-  compileSdk { version = release(36) { minorApiLevel = 1 } }
+    namespace = "com.mochi.rust"
+    compileSdk = 36
 
-  defaultConfig {
-    applicationId = "app.mochireader.reader"
-    minSdk = 24
-    targetSdk = 36
-    versionCode = 1
-    versionName = "1.0"
+    defaultConfig {
+        applicationId = "com.mochi.rust"
+        minSdk = 24
+        targetSdk = 36
+        versionCode = 1
+        versionName = "1.0"
+        // Native activity uses a shared library named "mochi_rust_app"
+        externalNativeBuild {
+            // No CMake; we will copy the .so via a custom task.
+        }
+    }
 
-    testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
-  }
+    signingConfigs {
+        create("debugConfig") {
+            storeFile = file("${rootDir}/debug.keystore")
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
 
-  // Do not remove or modify these signingConfigs. They are necessary for building, installing,
-  // and updating Android apps in AI Studio.
-  signingConfigs {
-    create("release") {
-      val keystorePath = System.getenv("KEYSTORE_PATH") ?: "${rootDir}/my-upload-key.jks"
-      storeFile = file(keystorePath)
-      storePassword = System.getenv("STORE_PASSWORD")
-      keyAlias = "upload"
-      keyPassword = System.getenv("KEY_PASSWORD")
+    buildTypes {
+        debug {
+            signingConfig = signingConfigs.getByName("debugConfig")
+        }
+        release {
+            isMinifyEnabled = false
+            signingConfig = signingConfigs.getByName("debugConfig")
+        }
     }
-    create("debugConfig") {
-      storeFile = file("${rootDir}/debug.keystore")
-      storePassword = "android"
-      keyAlias = "androiddebugkey"
-      keyPassword = "android"
-    }
-  }
 
-  buildTypes {
-    release {
-      isCrunchPngs = false
-      isMinifyEnabled = false
-      proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
-      // AI Studio.
-      signingConfig = signingConfigs.getByName("release")
+    // Keep assets minimal – just a placeholder string.
+    sourceSets {
+        getByName("main") {
+            java.srcDirs("src/main/java") // will be empty
+            res.srcDirs("src/main/res")
+            manifest.srcFile("src/main/AndroidManifest.xml")
+        }
     }
-    debug {
-      // Do not remove or modify this signingConfig assignment. It is necessary for Android apps in
-      // AI Studio.
-      signingConfig = signingConfigs.getByName("debugConfig")
-    }
-  }
-  compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
-  }
-  buildFeatures {
-    compose = true
-    buildConfig = true
-  }
-  testOptions {
-    unitTests {
-      isIncludeAndroidResources = true
-      all {
-        it.systemProperty(
-          "robolectric.dependency.repo.url",
-          "https://maven-central.storage-download.googleapis.com/maven2"
-        )
-      }
-    }
-  }
-  dependenciesInfo {
-    includeInApk = false
-    includeInBundle = true
-  }
 }
 
-// Configure the Secrets Gradle Plugin to use .env and .env.example files
-// to match the convention used in Web projects.
-secrets {
-  propertiesFileName = ".env"
-  defaultPropertiesFileName = ".env.example"
-  ignoreList.add("FIREBASE_APPCHECK_DEBUG_TOKEN")
+// Task that builds the Rust shared library and copies it into jniLibs.
+val cargoBuild = tasks.register("cargoBuild") {
+    doFirst {
+        exec { commandLine("cargo", "--version") }
+    }
+    doLast {
+        exec {
+            workingDir("../rust-app")
+            commandLine("cargo", "build", "--release", "--target", "aarch64-linux-android")
+        }
+        val libPath = file("../rust-app/target/aarch64-linux-android/release/libmochi_rust_app.so")
+        val jniDir = file("src/main/jniLibs/arm64-v8a")
+        jniDir.mkdirs()
+        copy { from(libPath); into(jniDir); rename { "libmochi_rust_app.so" } }
+    }
 }
 
-googleServices { missingGoogleServicesStrategy = MissingGoogleServicesStrategy.WARN }
-
-// Unused Firebase and networking dependencies are commented out for 100% offline privacy.
-dependencies {
-  implementation(platform(libs.androidx.compose.bom))
-  // implementation(platform(libs.firebase.bom))
-  // implementation(libs.accompanist.permissions)
-  implementation(libs.androidx.activity.compose) // Edge-to-edge activity host for Compose
-  // implementation(libs.androidx.camera.camera2)
-  // implementation(libs.androidx.camera.core)
-  // implementation(libs.androidx.camera.lifecycle)
-  // implementation(libs.androidx.camera.view)
-  implementation(libs.androidx.compose.material.icons.core) // Core Material symbols
-  implementation(libs.androidx.compose.material.icons.extended) // Extended reader/library icons
-  implementation(libs.androidx.compose.material3) // Material 3 UI components and theming
-  implementation(libs.androidx.compose.ui) // Jetpack Compose UI core
-  implementation(libs.androidx.compose.ui.graphics) // RenderEffect, shaders, and Canvas graphics
-  implementation(libs.androidx.compose.ui.tooling.preview) // Compose preview support
-  implementation(libs.androidx.core.ktx) // AndroidX Kotlin extensions
-  implementation(libs.androidx.datastore.preferences) // Local user preferences storage
-  implementation(libs.androidx.documentfile) // SAF directory tree traversal
-  implementation(libs.androidx.lifecycle.runtime.compose) // Lifecycle-aware StateFlow collection
-  implementation(libs.androidx.lifecycle.runtime.ktx) // Lifecycle scopes
-  implementation(libs.androidx.lifecycle.viewmodel.compose) // ViewModel integration for Compose
-  implementation(libs.androidx.navigation.compose) // Type-safe navigation between screens
-  implementation(libs.androidx.room.ktx) // Coroutine & Flow extensions for SQLite
-  implementation(libs.androidx.room.runtime) // Offline SQLite database for library and themes
-  implementation(libs.androidx.work.runtime.ktx) // Background SAF folder scanning
-  implementation(libs.coil.compose) // Off-main-thread cached cover image loading
-  // implementation(libs.converter.moshi)
-  // implementation(libs.firebase.ai)
-  // implementation(libs.firebase.appcheck.recaptcha)
-  // implementation(libs.firebase.appcheck.debug)
-  implementation(libs.kotlinx.coroutines.android) // Main-safe async execution
-  implementation(libs.kotlinx.coroutines.core) // Coroutine primitives and Flows
-  // implementation(libs.logging.interceptor)
-  implementation(libs.moshi.kotlin) // JSON parsing for themes and .mochitheme packs
-  // implementation(libs.okhttp)
-  // implementation(libs.play.services.location)
-  // implementation(libs.retrofit)
-  testImplementation(libs.androidx.compose.ui.test.junit4)
-  testImplementation(libs.androidx.core)
-  testImplementation(libs.androidx.junit)
-  testImplementation(libs.junit)
-  testImplementation(libs.kotlinx.coroutines.test)
-  testImplementation(libs.robolectric)
-  androidTestImplementation(platform(libs.androidx.compose.bom))
-  androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-  androidTestImplementation(libs.androidx.espresso.core)
-  androidTestImplementation(libs.androidx.junit)
-  androidTestImplementation(libs.androidx.runner)
-  debugImplementation(libs.androidx.compose.ui.test.manifest)
-  debugImplementation(libs.androidx.compose.ui.tooling)
-  "ksp"(libs.androidx.room.compiler)
-  "ksp"(libs.moshi.kotlin.codegen)
-}
+tasks.named("preBuild").configure { dependsOn(cargoBuild) }

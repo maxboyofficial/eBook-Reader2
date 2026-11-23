@@ -1,0 +1,13 @@
+[package]
+name = "mochi_rust_app"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "mochi_rust_app"
+crate-type = ["cdylib"]
+
+[dependencies]
+android-activity = "0.5"
+ndk-glue = "0.7"
+skia-safe = { version = "0.66", features = ["gl", "vulkan"] }
