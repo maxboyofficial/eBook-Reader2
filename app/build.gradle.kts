@@ -1,3 +1,4 @@
+// Build script for the Rust‑only Mochi eBook Reader app
 plugins {
     alias(libs.plugins.android.application)
 }
@@ -7,15 +8,13 @@ android {
     compileSdk = 36
 
     defaultConfig {
+        versionCode = 2
+        versionName = "1.1"
         applicationId = "com.mochi.rust"
         minSdk = 24
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0"
         // Native activity uses a shared library named "mochi_rust_app"
-        externalNativeBuild {
-            // No CMake; we will copy the .so via a custom task.
-        }
+        externalNativeBuild {}
     }
 
     signingConfigs {
@@ -37,10 +36,9 @@ android {
         }
     }
 
-    // Keep assets minimal – just a placeholder string.
     sourceSets {
         getByName("main") {
-            java.srcDirs("src/main/java") // will be empty
+            java.srcDirs("src/main/java")
             res.srcDirs("src/main/res")
             manifest.srcFile("src/main/AndroidManifest.xml")
         }
