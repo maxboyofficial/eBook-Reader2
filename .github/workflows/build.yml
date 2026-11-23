@@ -32,6 +32,26 @@ jobs:
         with:
           gradle-version: '9.3.1'
 
+      # ----- Rust toolchain -----
+      - name: Install Rust toolchain for Android target
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          target: aarch64-linux-android
+          override: true
+          profile: minimal
+
+      # ----- Android NDK -----
+      - name: Install Android NDK
+        uses: android-actions/setup-android@v2
+        with:
+          ndk-version: "25.2.9519653"
+          api-level: 24
+
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.3.1'
+
       - name: Run Unit Tests
         run: gradle testDebugUnitTest
 
@@ -48,7 +68,14 @@ jobs:
             -dname "CN=Kismis Reader,O=Kismis,C=US"
           cp my-upload-key.jks app/my-upload-key.jks
 
-      - name: Build Release APK
+      # ----- Build Rust library -----
+      - name: Build Rust shared library
+        run: |
+          cd rust-app
+          cargo build --release --target aarch64-linux-android
+        env:
+          CARGO_TARGET_AARCH64_LINUX_ANDROID_LINKER: "${ANDROID_NDK_ROOT}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android24-clang"
+
         run: |
           cat << 'EOF' > init-signing.gradle.kts
           allprojects {
